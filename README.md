@@ -1,6 +1,6 @@
 # RecruitData — Live Jobs & Hiring Data API for AI Agents (MCP)
 
-The reliable **jobs & hiring data layer** that recruiting-AI agents plug into. One call → unified, deduplicated job listings from **Foundit, Shine, RemoteOK, BuiltIn & WeWorkRemotely** — no need to build and maintain 5 separate scrapers.
+The reliable **jobs & hiring data layer** that recruiting-AI agents plug into. One call → unified, deduplicated job listings from **LinkedIn (premium), Foundit, Shine, RemoteOK, BuiltIn & WeWorkRemotely** — no need to build and maintain separate scrapers for each board.
 
 **Live MCP server:** `https://recruitdata-mcp.datapulse.workers.dev/mcp`
 
@@ -34,8 +34,8 @@ https://recruitdata-mcp.datapulse.workers.dev/mcp
 
 ## Pricing
 
-- **Free:** 15 jobs per call, all public boards.
-- **Pro — $49/month:** up to 300 jobs/call, all sources, priority. After subscribing, pass your account email as `customerEmail`.
+- **Free:** 15 jobs per call from public boards (Foundit, Shine, RemoteOK, BuiltIn, WeWorkRemotely).
+- **Pro — $49/month:** up to 300 jobs/call + **LinkedIn premium source** + priority. After subscribing, pass your account email as `customerEmail`.
 - Subscribe: https://checkout.dodopayments.com/buy/pdt_0Ngl1yN9u8QXlW1cZqYrU?quantity=1
 
 ## Use cases

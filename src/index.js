@@ -20,25 +20,31 @@ export class RecruitDataMCP extends McpAgent {
     async init() {
         this.server.tool(
             'search_jobs',
-            'Search live job listings across multiple boards (Foundit, Shine, RemoteOK, BuiltIn, ' +
+            'Search live job listings across multiple boards (LinkedIn, Foundit, Shine, RemoteOK, BuiltIn, ' +
             'WeWorkRemotely) in one call — unified, deduplicated, structured. Built for recruiting/HR ' +
-            'AI agents that need reliable hiring data. Returns title, company, location, salary, skills, url.',
+            'AI agents that need reliable hiring data. Returns title, company, location, salary, skills, url. ' +
+            'LinkedIn is a premium source (paid tier).',
             {
                 keyword: z.string().describe('Role or skill, e.g. "python developer", "product manager"'),
-                location: z.string().optional().describe('City/region (applies to India boards)'),
-                sources: z.array(z.enum(['foundit', 'shine', 'remoteok', 'builtin', 'weworkremotely']))
-                    .optional().describe('Which boards to query; default = all'),
+                location: z.string().optional().describe('City/region/country, e.g. "India", "bangalore", "remote"'),
+                sources: z.array(z.enum(['linkedin', 'foundit', 'shine', 'remoteok', 'builtin', 'weworkremotely']))
+                    .optional().describe('Which boards to query; default = all available for your tier'),
                 max: z.number().optional().describe('Max results (free tier capped at 15)'),
-                customerEmail: z.string().optional().describe('Paid subscription email for higher limits'),
+                customerEmail: z.string().optional().describe('Paid subscription email — unlocks LinkedIn + higher limits'),
             },
             async ({ keyword, location, sources, max, customerEmail }) => {
                 const paid = await isPaidCustomer(customerEmail, this.env);
                 const cap = paid ? PAID_MAX : FREE_MAX;
                 const limit = Math.min(max || cap, cap);
-                const boards = sources && sources.length ? sources : ['foundit', 'shine', 'remoteok', 'builtin', 'weworkremotely'];
+                const freeBoards = ['foundit', 'shine', 'remoteok', 'builtin', 'weworkremotely'];
+                const premiumBoards = ['linkedin'];
+                const allowed = paid ? [...premiumBoards, ...freeBoards] : freeBoards;
+                let boards = sources && sources.length ? sources.filter((s) => allowed.includes(s)) : allowed;
+                if (!boards.length) boards = freeBoards;
                 const perBoard = Math.ceil(limit / boards.length) + 2;
 
                 const runners = {
+                    linkedin: () => scrapeLinkedIn(keyword, location, perBoard),
                     foundit: () => scrapeFoundit(keyword, location, perBoard),
                     shine: () => scrapeShine(keyword, location, perBoard),
                     remoteok: () => scrapeRemoteOK(keyword, perBoard),
@@ -58,7 +64,7 @@ export class RecruitDataMCP extends McpAgent {
                     tier: paid ? 'paid' : 'free',
                     count: all.length,
                     sourcesQueried: boards,
-                    upgradeNote: paid ? undefined : `Free tier: ${FREE_MAX} jobs/call across all boards. Subscribe for up to ${PAID_MAX}/call + Naukri/LinkedIn premium sources. ${CHECKOUT_URL}`,
+                    upgradeNote: paid ? undefined : `Free tier: ${FREE_MAX} jobs/call from public boards. Subscribe ($49/mo) for up to ${PAID_MAX}/call + LinkedIn premium source. ${CHECKOUT_URL}`,
                     jobs: all,
                 }, null, 2) }] };
             },
@@ -78,6 +84,35 @@ export class RecruitDataMCP extends McpAgent {
 }
 
 /* ===================== Worker-safe job sources ===================== */
+
+// LinkedIn — public "guest" jobs API (no login). Returns HTML job cards.
+// Premium source: highest-demand board. Parsed via regex (Workers-safe).
+async function scrapeLinkedIn(keyword, location, max) {
+    const url = new URL('https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search');
+    url.searchParams.set('keywords', keyword);
+    if (location) url.searchParams.set('location', location);
+    url.searchParams.set('start', '0');
+    let html;
+    try {
+        const res = await fetch(url.toString(), { headers: { 'user-agent': UA, accept: 'text/html' } });
+        if (!res.ok) return [];
+        html = await res.text();
+    } catch { return []; }
+
+    const out = [];
+    const cards = html.split('base-card');
+    for (const c of cards) {
+        if (out.length >= max) break;
+        const title = decodeHtml((c.match(/base-search-card__title[^>]*>\s*([^<]+?)\s*</) || [])[1]);
+        const company = decodeHtml((c.match(/base-search-card__subtitle[^>]*>\s*(?:<a[^>]*>)?\s*([^<]+?)\s*</) || [])[1]);
+        const loc = decodeHtml((c.match(/job-search-card__location[^>]*>\s*([^<]+?)\s*</) || [])[1]);
+        const link = (c.match(/href="(https:\/\/[a-z.]*linkedin\.com\/jobs\/view\/[^"?]+)/) || [])[1];
+        const posted = (c.match(/datetime="([^"]+)"/) || [])[1];
+        if (!title || !company) continue;
+        out.push({ source: 'linkedin', title, company, locations: loc ? [loc] : [], experience: null, salary: null, skills: [], postedAt: posted || null, url: link || null });
+    }
+    return out;
+}
 
 async function scrapeFoundit(keyword, location, max) {
     const url = new URL('https://www.foundit.in/middleware/jobsearch');
@@ -180,6 +215,10 @@ async function scrapeWWR(keyword, max) {
 
 /* ===================== helpers ===================== */
 function clean(v) { return (v || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); }
+function decodeHtml(v) {
+    if (!v) return '';
+    return v.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\s+/g, ' ').trim();
+}
 function salaryStr(min, max) {
     const a = min?.absoluteValue ?? 0, b = max?.absoluteValue ?? 0;
     if (!a && !b) return null;
