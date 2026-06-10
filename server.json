@@ -1,0 +1,15 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.ssaikrishna862/recruitdata",
+  "description": "Live jobs & hiring data API for recruiting AI agents — unified search across Foundit, Shine, RemoteOK, BuiltIn and WeWorkRemotely in one call.",
+  "version": "1.0.0",
+  "homepage": "https://recruitdata-mcp.datapulse.workers.dev",
+  "repository": {
+    "url": "https://github.com/ssaikrishna862/recruitdata-mcp",
+    "source": "github"
+  },
+  "remotes": [
+    { "type": "streamable-http", "url": "https://recruitdata-mcp.datapulse.workers.dev/mcp" },
+    { "type": "sse", "url": "https://recruitdata-mcp.datapulse.workers.dev/sse" }
+  ]
+}

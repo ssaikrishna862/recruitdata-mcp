@@ -1,0 +1,23 @@
+startCommand:
+  type: http
+  url: "https://recruitdata-mcp.datapulse.workers.dev/mcp"
+
+name: recruitdata
+displayName: RecruitData
+description: >-
+  Live jobs & hiring data for recruiting AI agents — unified search across
+  Foundit, Shine, RemoteOK, BuiltIn and WeWorkRemotely in one call.
+homepage: https://recruitdata-mcp.datapulse.workers.dev
+tags:
+  - jobs
+  - recruiting
+  - hiring
+  - hr-tech
+  - job-search
+  - data-api
+  - ai-agents
+tools:
+  - name: search_jobs
+    description: Search live jobs across multiple boards by keyword and location.
+  - name: get_pricing
+    description: Pricing tiers and subscribe link.
