@@ -11,3 +11,9 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RecruitDataMCP"]
+
+# Proprietary dataset archive — every fetched job is saved here, compounding daily.
+[[d1_databases]]
+binding = "ARCHIVE"
+database_name = "datapulse-archive"
+database_id = "b7a0e3f4-7db9-4189-8bc3-6c77509dfa91"

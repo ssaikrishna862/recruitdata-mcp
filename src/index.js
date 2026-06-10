@@ -36,7 +36,9 @@ export class RecruitDataMCP extends McpAgent {
                 const paid = await isPaidCustomer(customerEmail, this.env);
                 const cap = paid ? PAID_MAX : FREE_MAX;
                 const limit = Math.min(max || cap, cap);
-                const freeBoards = ['foundit', 'shine', 'remoteok', 'builtin', 'weworkremotely'];
+                // Reliable-first ordering: foundit/shine/builtin always work from the edge;
+                // remoteok/weworkremotely are best-effort (sometimes block datacenter IPs).
+                const freeBoards = ['foundit', 'shine', 'builtin', 'remoteok', 'weworkremotely'];
                 const premiumBoards = ['linkedin'];
                 const allowed = paid ? [...premiumBoards, ...freeBoards] : freeBoards;
                 let boards = sources && sources.length ? sources.filter((s) => allowed.includes(s)) : allowed;
@@ -59,6 +61,12 @@ export class RecruitDataMCP extends McpAgent {
                 const seen = new Set();
                 all = all.filter((j) => { const k = `${(j.title||'').toLowerCase()}|${(j.company||'').toLowerCase()}`; if (seen.has(k)) return false; seen.add(k); return true; });
                 all = all.filter((j) => j.title && j.company).slice(0, limit);
+
+                // 🏔️ Archive every job into the proprietary dataset (background, non-blocking).
+                // This compounds daily into a historical hiring dataset no one can back-fill.
+                if (this.env?.ARCHIVE && all.length) {
+                    archiveJobs(this.env.ARCHIVE, all, keyword).catch(() => {});
+                }
 
                 return { content: [{ type: 'text', text: JSON.stringify({
                     tier: paid ? 'paid' : 'free',
@@ -157,10 +165,25 @@ async function scrapeShine(keyword, location, max) {
 }
 
 async function scrapeRemoteOK(keyword, max) {
-    const url = keyword ? `https://remoteok.com/api?tags=${encodeURIComponent(keyword.trim().toLowerCase().replace(/\s+/g, '-'))}` : 'https://remoteok.com/api';
-    const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': UA } });
-    if (!res.ok) return [];
-    const data = await res.json();
+    // Best-effort: RemoteOK sometimes blocks datacenter IPs. Try tagged then plain endpoint.
+    const urls = keyword
+        ? [`https://remoteok.com/api?tags=${encodeURIComponent(keyword.trim().toLowerCase().replace(/\s+/g, '-'))}`, 'https://remoteok.com/api']
+        : ['https://remoteok.com/api'];
+    let data = [];
+    for (const url of urls) {
+        try {
+            const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': UA, referer: 'https://remoteok.com/' } });
+            if (!res.ok) continue;
+            const j = await res.json();
+            if (Array.isArray(j) && j.length > 1) {
+                // filter by keyword client-side when using the plain endpoint
+                data = keyword && url.endsWith('/api')
+                    ? j.filter((x) => JSON.stringify(x).toLowerCase().includes(keyword.toLowerCase().split(' ')[0]))
+                    : j;
+                if (data.length) break;
+            }
+        } catch { /* try next */ }
+    }
     return (Array.isArray(data) ? data : []).filter((j) => j.position && j.company).slice(0, max).map((j) => ({
         source: 'remoteok', title: j.position, company: j.company,
         locations: j.location ? [j.location] : ['Remote'],
@@ -224,6 +247,28 @@ function salaryStr(min, max) {
     if (!a && !b) return null;
     const cur = min?.currency ?? 'INR';
     return a && b ? `${cur} ${a} - ${b}` : `${cur} ${a || b}`;
+}
+
+/* ===================== Proprietary dataset archive ===================== */
+// Saves each job once (deduped by fingerprint). Every day this grows the moat.
+async function archiveJobs(db, jobs, keyword) {
+    const now = new Date().toISOString().slice(0, 10);
+    const stmt = db.prepare(
+        `INSERT OR IGNORE INTO jobs_archive
+         (source,title,company,location,salary,skills,url,keyword,first_seen,fingerprint)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`
+    );
+    const batch = jobs.map((j) => {
+        const fp = `${j.source}|${(j.title || '').toLowerCase()}|${(j.company || '').toLowerCase()}`;
+        return stmt.bind(
+            j.source || '', j.title || '', j.company || '',
+            (j.locations || []).join('; ') || null,
+            j.salary || null,
+            (j.skills || []).join(', ') || null,
+            j.url || null, keyword || null, now, fp,
+        );
+    });
+    if (batch.length) await db.batch(batch);
 }
 
 /* ===================== Dodo paid gate ===================== */
